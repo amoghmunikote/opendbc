@@ -15,6 +15,9 @@ class CarController(CarControllerBase):
     super().__init__(dbc_names, CP)
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.apply_angle = 0
+    self.steer_cnt = 0
+    self.hud_cnt = 0
+    self.accel_cnt = 0
 
   def update(self, CC, CS, now_nanos):
     can_sends = []
@@ -23,13 +26,17 @@ class CarController(CarControllerBase):
     if (self.frame % 2) == 0:
       self.apply_angle = apply_std_steer_angle_limits(actuators.steeringAngleDeg, self.apply_angle, \
       CS.out.vEgo, CS.out.steeringAngleDeg, CC.latActive, CarControllerParams.ANGLE_LIMITS)
-      can_sends.append(create_can_steer_command(self.packer, self.apply_angle, CC.latActive, CS.out.standstill, CS.steer_state))
-      can_sends.append(create_lkas_hud(self.packer, CS.hud_passthrough, CS.adas_settings_pt, CC.enabled, CS.lka_on))
+      self.steer_cnt = (self.steer_cnt + 1) & 0xF
+      self.hud_cnt = (self.hud_cnt + 1) & 0xF
+      self.accel_cnt = (self.accel_cnt + 1) & 0xF
+
+      can_sends.append(create_can_steer_command(self.packer, self.apply_angle, CC.latActive, CS.out.standstill, self.steer_cnt))
+      can_sends.append(create_lkas_hud(self.packer, CS.hud_passthrough, CS.adas_settings_pt, CC.enabled, CS.lka_on, self.hud_cnt))
 
       if self.CP.openpilotLongitudinalControl:
         long_active = CC.longActive and not CS.out.gasPressed
         brake_hold = CS.out.standstill and actuators.accel < 0
-        can_sends.append(create_accel_command(self.packer, actuators.accel, long_active, brake_hold))
+        can_sends.append(create_accel_command(self.packer, actuators.accel, long_active, brake_hold, self.accel_cnt))
 
     new_actuators = actuators.as_builder()
     new_actuators.steeringAngleDeg = self.apply_angle

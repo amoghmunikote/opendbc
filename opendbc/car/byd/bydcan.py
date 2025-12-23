@@ -1,26 +1,26 @@
-from opendbc.car.byd.values import BydSteerStates
-
-def create_can_steer_command(packer, steer_angle, steer_req, is_standstill, steer_state):
-
+def create_can_steer_command(packer, steer_angle, steer_req, is_standstill, counter):
+  # keep the legacy standstill behavior to match earlier tuning
   set_me_xe = 0xE if is_standstill else 0xB
 
   values = {
     "STEER_REQ": steer_req,
-    # to recover from ecu fault, it must be momentarily pulled low.
-    "STEER_STATE": BydSteerStates.STEER_ENABLED if steer_req else steer_state,
     "STEER_ANGLE": steer_angle,
-    # 0xB fault lesser, maybe higher value fault lesser, 0xB also seem to have the highest angle limit at high speed.
     "SET_ME_XE": set_me_xe if steer_req else 0,
     "SET_ME_FF": 0xFF,
     "SET_ME_F": 0xF,
     "SET_ME_1_1": 1,
     "SET_ME_1_2": 1,
-    "UNKNOWN": 2773 if steer_req else 0,
-    }
+    "SET_ME_X01": 1,
+    # keep EPS_OK asserted when commanding; set zero if we need to drop torque
+    "EPS_OK": 1 if steer_req else 0,
+    "UNKNOWN": 0,
+    "COUNTER": counter & 0xF,
+    "CHECKSUM": 0,
+  }
 
   return packer.make_can_msg("STEERING_MODULE_ADAS", 0, values)
 
-def create_accel_command(packer, accel, enabled, brake_hold):
+def create_accel_command(packer, accel, enabled, brake_hold, counter):
   accel = max(min(accel * 13, 30), -50)
   accel_factor = 12 if accel >= 2 else 5 if accel < 0 else 11
   enabled &= not brake_hold
@@ -48,19 +48,35 @@ def create_accel_command(packer, accel, enabled, brake_hold):
     "ACC_OVERRIDE_OR_STANDSTILL": brake_hold,
     "STANDSTILL_STATE": brake_hold,
     "STANDSTILL_RESUME": 0,
+    "COUNTER": counter & 0xF,
+    "CHECKSUM": 0,
   }
 
   return packer.make_can_msg("ACC_CMD", 0, values)
 
-def create_lkas_hud(packer, hud_pt, settings_pt, enabled, lka_on):
+def create_lkas_hud(packer, hud_tsr, settings, enabled, lka_on, counter):
+  # populate only the known safety critical bits; leave visuals minimal
+  steer_active_low = 0 if (enabled and lka_on) else 1
 
   values = {
-    "ADAS_SETTINGS_PT": settings_pt,
-    "HUD_PASSTHROUGH": hud_pt,
-    # TODO integrate warning signs when steer limited
+    "SETTINGS": settings,
+    "TSR": hud_tsr,
     "HAND_ON_WHEEL_WARNING": 0,
-    "LKAS_ENABLED_ACTIVE_LOW": lka_on,
-    "LKAS_ACTIVE": enabled and lka_on,
+    "LKAS_ENABLED": 1 if lka_on else 0,
+    "STEER_ACTIVE_ACTIVE_LOW": steer_active_low,
+    "LEFT_LANE_VISIBLE": 1 if enabled else 0,
+    "RIGHT_LANE_VISIBLE": 1 if enabled else 0,
+    "LSS_STATE": 0,
+    "HMA": 0,
+    "PT2": 0,
+    "PT3": 0,
+    "PT4": 0,
+    "PT5": 0,
+    "TSR_STATUS": 0,
+    "SET_ME_XFF": 0xFF,
+    "SET_ME_1_2": 1,
+    "COUNTER": counter & 0xF,
+    "CHECKSUM": 0,
   }
 
   return packer.make_can_msg("LKAS_HUD_ADAS", 0, values)

@@ -3,7 +3,7 @@ from opendbc.can.parser import CANParser
 from opendbc.can.can_define import CANDefine
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
-from opendbc.car.byd.values import DBC, CANBUS, BydSteerStates
+from opendbc.car.byd.values import DBC, CANBUS
 
 # Multiplier between GPS ground speed to the meter cluster's displayed speed
 HUD_MULTIPLIER = 1.068
@@ -19,20 +19,20 @@ class CarState(CarStateBase):
     self.prev_angle = 0
     self.hud_passthrough = 0
     self.adas_settings_pt = 0
-    self.steer_state = 0
     self.lka_on = 0
+    self.eps_ok = 0
 
   def update(self, can_parsers) -> structs.CarState:
     cp = can_parsers[Bus.pt]
     cp_cam = can_parsers[Bus.cam]
     ret = structs.CarState()
 
-    self.adas_settings_pt = cp_cam.vl["LKAS_HUD_ADAS"]['ADAS_SETTINGS_PT']
-    self.hud_passthrough = cp_cam.vl["LKAS_HUD_ADAS"]['HUD_PASSTHROUGH']
-    self.lka_on = cp_cam.vl["LKAS_HUD_ADAS"]['LKAS_ENABLED_ACTIVE_LOW']
+    self.adas_settings_pt = cp_cam.vl["LKAS_HUD_ADAS"]['SETTINGS']
+    self.hud_passthrough = cp_cam.vl["LKAS_HUD_ADAS"]['TSR']
+    self.lka_on = cp_cam.vl["LKAS_HUD_ADAS"]['LKAS_ENABLED']
 
-    self.steer_state = cp_cam.vl["STEERING_MODULE_ADAS"]['STEER_STATE']
-    ret.steerFaultTemporary = self.steer_state == BydSteerStates.FAULTED
+    self.eps_ok = cp_cam.vl["STEERING_MODULE_ADAS"]['EPS_OK']
+    ret.steerFaultTemporary = not bool(self.eps_ok)
 
     ret.wheelSpeeds = self.get_wheel_speeds(
       cp.vl["WHEEL_SPEED"]['WHEELSPEED_FL'],
